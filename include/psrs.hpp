@@ -56,11 +56,12 @@ namespace psrs {
         std::vector<int> data;
         std::vector<int> samples;
         size_t stride_size;
-        P1Payload(const std::vector<int>& data, size_t begin, size_t end, size_t stride_size)
+        P1Payload(const std::vector<int>& data, size_t num_threads, size_t begin, size_t end, size_t stride_size)
             : stride_size(stride_size) {
             auto first = data.begin() + (long)begin;
             auto last = data.begin() + (long)end;
             this->data = std::vector<int>(first, last);
+            this->samples.reserve(num_threads);
         }
     };
 

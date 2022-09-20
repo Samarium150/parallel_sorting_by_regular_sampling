@@ -21,7 +21,7 @@
 
 namespace psrs {
 
-    static std::vector<int> merge_sorted_vectors(std::vector<std::vector<int>> vectors) {
+    static std::vector<int> merge_sorted_vectors(const std::vector<std::vector<int>>& vectors) {
         size_t size = vectors.size();
         size_t total_size = 0;
         for (size_t i = 0; i < size; i++) {
@@ -69,7 +69,7 @@ namespace psrs {
         for (size_t i = 0; i < num_threads; ++i) {
             size_t data_size = (i == num_threads - 1) ? data.size() - allocated : data.size() / num_threads;
             size_t stride_size = data.size() / (num_threads * num_threads);
-            P1Payload p1_payload(data, allocated, allocated + data_size, stride_size);
+            P1Payload p1_payload(data, num_threads, allocated, allocated + data_size, stride_size);
             P3Payload p3_payload(&pivots, all_partitions_ptr[i]);
             P4Payload p4_payload(&all_partitions);
             payloads.emplace_back(i, &log_file, &pthread_utils, p1_payload, p3_payload, p4_payload);
@@ -126,8 +126,8 @@ namespace psrs {
     }
 
     static void* psrs(void* arg) {
-        auto* payload = (Payload*)arg;
-        auto* pu = payload->pthread_utils;
+        auto payload = (Payload*)arg;
+        auto pu = payload->pthread_utils;
         auto& timer = payload->timer;
         std::ofstream& log_file = *payload->log_file;
         timer.start();
@@ -164,6 +164,7 @@ namespace psrs {
         std::vector<std::vector<std::vector<int>>> all_partitions(num_threads);
         std::vector<int> pivots(num_threads - 1);
         std::vector<Payload> payloads;
+        payloads.reserve(num_threads);
         init(data, num_threads, log_file, pthread_utils, pivots, all_partitions, payloads);
         std::cout << "Initialization finished, starting threads" << std::endl;
         for (size_t i = 0; i < num_threads; ++i) {
@@ -174,7 +175,9 @@ namespace psrs {
             }
         }
         pthread_barrier_wait(&pthread_utils.p1_barrier);
+#ifdef DEBUG
         std::cout << "Phase 1: All threads finished." << std::endl;
+#endif
         timer.start();
         std::vector<std::vector<int>> samples(num_threads);
         for (size_t i = 0; i < num_threads; ++i) {
@@ -182,16 +185,24 @@ namespace psrs {
         }
         phase_2(samples, pivots);
         timer.stop();
+#ifdef DEBUG
         log_file << utils::format("2: %ld\n", timer.duration().count());
+#endif
         pthread_barrier_wait(&pthread_utils.p2_barrier);
+#ifdef DEBUG
         std::cout << "Phase 2 finished." << std::endl;
+#endif
         pthread_barrier_wait(&pthread_utils.p3_barrier);
+#ifdef DEBUG
         std::cout << "Phase 3: All threads finished." << std::endl;
+#endif
         pthread_barrier_wait(&pthread_utils.p4_barrier);
+#ifdef DEBUG
         std::cout << "Phase 4: All threads finished." << std::endl;
+#endif
         log_file.close();
-        pthread_utils.~PthreadUtils();
         std::vector<int> result;
+        result.reserve(data.size());
         void* status;
         for (size_t i = 0; i < num_threads; ++i) {
             result.insert(result.end(), payloads[i].p4_payload.result.begin(), payloads[i].p4_payload.result.end());
@@ -199,9 +210,10 @@ namespace psrs {
                 std::cerr << "Failed to join Thread " << i << "." << std::endl;
                 exit(1);
             }
+#ifdef DEBUG
             std::cout << "Thread " << i << " exiting with " << status << std::endl;
+#endif
         }
-        std::cout << "PSRS finished." << std::endl;
         return result;
     }
 }  // namespace psrs

@@ -22,7 +22,8 @@
 
 #include "psrs.hpp"
 
-#define M (1024 * 1024)
+#define K 1000
+#define M (K * K)
 
 using namespace std;
 
@@ -51,13 +52,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     cout << "Size of array: " << size << "M, Number of threads: " << num_threads << endl;
-    size *= M;
+    //    size *= M;
     random_device rd;
     mt19937 generator(rd());
     vector<int> data(size);
     utils::Timer main_timer;
     init(data, generator);
-    utils::print_vector(data);
     cout << "Data initialized." << endl;
     cout << "Sequential sorting started." << endl;
     vector<int> clone = data;
