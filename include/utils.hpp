@@ -18,10 +18,8 @@
 
 #include <cassert>
 #include <chrono>
-#include <functional>
 #include <iostream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -29,7 +27,7 @@ namespace utils {
 
     // https://stackoverflow.com/a/10758845
     template <typename T>
-    [[maybe_unused]] void print_vector(std::vector<T>& vec) {
+    [[maybe_unused]] void print_vector(const std::vector<T>& vec) {
         std::ranges::copy(vec, std::ostream_iterator<T>(std::cout, " "));
         std::cout << std::endl;
     }

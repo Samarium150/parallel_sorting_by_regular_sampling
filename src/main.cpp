@@ -14,11 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include <pthread.h>
-#include <algorithm>
-#include <iostream>
 #include <random>
-#include <vector>
 
 #include "psrs.hpp"
 
@@ -28,8 +24,8 @@
 using namespace std;
 
 static void init(vector<int>& data, mt19937& generator) {
-    uniform_int_distribution<int> distribution(INT32_MIN, INT32_MAX);
-    for (int& i : data) {
+    auto distribution = uniform_int_distribution<int>(INT32_MIN, INT32_MAX);
+    for (auto& i : data) {
         i = distribution(generator);
     }
 }
@@ -52,24 +48,24 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     cout << "Size of array: " << size << "M, Number of threads: " << num_threads << endl;
-    //    size *= M;
-    random_device rd;
-    mt19937 generator(rd());
-    vector<int> data(size);
-    utils::Timer main_timer;
+    size *= M;
+    auto rd = random_device();
+    auto generator = mt19937(rd());
+    auto data = vector<int>(size);
+    auto timer = utils::Timer<std::chrono::microseconds>();
     init(data, generator);
     cout << "Data initialized." << endl;
     cout << "Sequential sorting started." << endl;
-    vector<int> clone = data;
-    main_timer.start();
+    auto clone = vector<int>(data);
+    timer.start();
     sort(clone.begin(), clone.end());
-    main_timer.stop();
-    cout << "Sequential sorting finished in " << main_timer.duration().count() << " milliseconds." << endl;
+    timer.stop();
+    cout << "Sequential sorting finished in " << timer.duration().count() << " microseconds." << endl;
     cout << "Parallel sorting started." << endl;
-    main_timer.start();
-    vector<int> result = psrs::psrs(data, num_threads);
-    main_timer.stop();
-    cout << "Parallel sort finished in " << main_timer.duration().count() << " milliseconds." << endl;
+    timer.start();
+    auto result = psrs::psrs(data, num_threads);
+    timer.stop();
+    cout << "Parallel sort finished in " << timer.duration().count() << " microseconds." << endl;
     cout << "Checking result..." << endl;
     cout << (clone == result ? "Correct" : "Incorrect") << endl;
     return 0;

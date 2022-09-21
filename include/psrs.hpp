@@ -18,17 +18,18 @@
 
 #include <pthread.h>
 #include <fstream>
-#include <utility>
-#include <vector>
 
 #include "utils.hpp"
 
 namespace psrs {
 
+    using partitions_t = typename std::vector<std::vector<std::vector<int>>>;
+
     class alignas(64) PthreadUtils {
     public:
         pthread_attr_t attr{};
         pthread_mutex_t mutex{};
+        pthread_barrier_t p0_barrier{};
         pthread_barrier_t p1_barrier{};
         pthread_barrier_t p2_barrier{};
         pthread_barrier_t p3_barrier{};
@@ -36,14 +37,16 @@ namespace psrs {
         explicit PthreadUtils(size_t num_threads) {
             pthread_attr_init(&attr);
             pthread_mutex_init(&mutex, nullptr);
-            pthread_barrier_init(&p1_barrier, nullptr, num_threads + 1);
-            pthread_barrier_init(&p2_barrier, nullptr, num_threads + 1);
-            pthread_barrier_init(&p3_barrier, nullptr, num_threads + 1);
-            pthread_barrier_init(&p4_barrier, nullptr, num_threads + 1);
+            pthread_barrier_init(&p0_barrier, nullptr, num_threads);
+            pthread_barrier_init(&p1_barrier, nullptr, num_threads);
+            pthread_barrier_init(&p2_barrier, nullptr, num_threads);
+            pthread_barrier_init(&p3_barrier, nullptr, num_threads);
+            pthread_barrier_init(&p4_barrier, nullptr, num_threads);
         }
         ~PthreadUtils() {
             pthread_attr_destroy(&attr);
             pthread_mutex_destroy(&mutex);
+            pthread_barrier_destroy(&p0_barrier);
             pthread_barrier_destroy(&p1_barrier);
             pthread_barrier_destroy(&p2_barrier);
             pthread_barrier_destroy(&p3_barrier);
@@ -51,49 +54,52 @@ namespace psrs {
         }
     };
 
-    class alignas(64) P1Payload {
-    public:
-        std::vector<int> data;
-        std::vector<int> samples;
-        size_t stride_size;
-        P1Payload(const std::vector<int>& data, size_t num_threads, size_t begin, size_t end, size_t stride_size)
-            : stride_size(stride_size) {
-            auto first = data.begin() + (long)begin;
-            auto last = data.begin() + (long)end;
-            this->data = std::vector<int>(first, last);
-            this->samples.reserve(num_threads);
+    class alignas(64) Globals {
+    private:
+        Globals(size_t num_threads, std::ofstream& log_file, PthreadUtils& pthread_utils)
+            : log_file(log_file), pthread_utils(pthread_utils) {
+            pivots = std::vector<int>(num_threads - 1);
+            all_samples = std::vector<std::vector<int>>(num_threads);
+            all_partitions = partitions_t(num_threads);
+            for (auto& partitions : all_partitions) {
+                partitions.reserve(num_threads);
+                for (size_t _ = 0; _ < num_threads; ++_) {
+                    partitions.emplace_back(std::vector<int>());
+                }
+            }
         }
-    };
 
-    class alignas(64) P3Payload {
     public:
-        std::vector<int>* __restrict data{};
-        std::vector<int>* __restrict pivots;
-        std::vector<std::vector<int>*> partition_ptrs;
-        P3Payload(std::vector<int>* __restrict pivots, std::vector<std::vector<int>*> partition_ptrs)
-            : pivots(pivots), partition_ptrs(std::move(partition_ptrs)) {}
-    };
-
-    class alignas(64) P4Payload {
-    public:
-        std::vector<std::vector<std::vector<int>>>* all_partitions;
-        std::vector<int> result;
-        explicit P4Payload(std::vector<std::vector<std::vector<int>>>* all_partitions)
-            : all_partitions(all_partitions) {}
+        std::ofstream& log_file;
+        PthreadUtils& pthread_utils;
+        std::vector<int> pivots;
+        std::vector<std::vector<int>> all_samples;
+        partitions_t all_partitions;
+        static Globals& get_instance(size_t num_threads, std::ofstream& log_file, PthreadUtils& pthread_utils) {
+            static Globals instance(num_threads, log_file, pthread_utils);
+            return instance;
+        }
     };
 
     class alignas(64) Payload {
     public:
         size_t index;
         utils::Timer<std::chrono::microseconds> timer{};
-        std::ofstream* log_file;
-        PthreadUtils* pthread_utils;
-        P1Payload p1_payload;
-        P3Payload p3_payload;
-        P4Payload p4_payload;
-        Payload(size_t index, std::ofstream* log_file, PthreadUtils* pu, P1Payload p1p, P3Payload p3p, P4Payload p4p)
-            : index(index), log_file(log_file), pthread_utils(pu), p1_payload(std::move(p1p)),
-              p3_payload(std::move(p3p)), p4_payload(std::move(p4p)) {}
+        Globals& globals;
+        std::vector<int> data;
+        size_t stride_size;
+        std::vector<int> result{};
+        Payload(size_t index,
+                Globals& globals,
+                const std::vector<int>& data,
+                size_t begin,
+                size_t end,
+                size_t stride_size)
+            : index(index), globals(globals), stride_size(stride_size) {
+            auto first = data.begin() + (long)begin;
+            auto last = data.begin() + (long)end;
+            this->data = std::vector<int>(first, last);
+        }
     };
 
     std::vector<int> psrs(const std::vector<int>&, size_t);
