@@ -38,7 +38,8 @@ namespace utils {
         using time_point = typename ClockT::time_point;
 
     protected:
-        time_point _start = ClockT::now(), _end = {};
+        time_point _start = ClockT::now();
+        time_point _end = {};
 
     public:
         void start() {
@@ -57,7 +58,7 @@ namespace utils {
 
     // https://stackoverflow.com/a/26221725
     template <typename... Args>
-    std::string format(const std::string& format, Args... args) {
+    [[maybe_unused]] std::string format(const std::string& format, Args... args) {
         int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;
         if (size_s <= 0) {
             throw std::runtime_error("Error during formatting.");

@@ -104,7 +104,7 @@ namespace psrs {
         return merge_sorted_vectors(all_partitions[index]);
     }
 
-    static void* psrs(void* arg) {
+    void* psrs(void* arg) {
         auto payload = (Payload*)arg;
         auto& timer = payload->timer;
         auto& globals = payload->globals;
@@ -113,12 +113,10 @@ namespace psrs {
         timer.start();
         globals.all_samples[payload->index] = phase_1(payload->data, payload->stride_size);
         timer.stop();
-        pthread_mutex_lock(&globals.pthread_utils.mutex);
-        globals.log_file << utils::format("1.%lld: %ld\n", payload->index, timer.duration().count());
+        payload->elapsed_time.emplace_back(timer.duration().count());
 #ifdef DEBUG
         std::cout << "Thread " << payload->index << " finished Phase 1" << std::endl;
 #endif
-        pthread_mutex_unlock(&globals.pthread_utils.mutex);
         pthread_barrier_wait(&globals.pthread_utils.p1_barrier);
         // Phase 2
         auto& pivots = globals.pivots;
@@ -126,59 +124,64 @@ namespace psrs {
             timer.start();
             phase_2(globals.all_samples, pivots);
             timer.stop();
-            pthread_mutex_lock(&globals.pthread_utils.mutex);
-            globals.log_file << utils::format("2: %ld\n", timer.duration().count());
+            payload->elapsed_time.emplace_back(timer.duration().count());
 #ifdef DEBUG
             std::cout << "Thread 0 finished Phase 2" << std::endl;
 #endif
-            pthread_mutex_unlock(&globals.pthread_utils.mutex);
+        } else {
+            payload->elapsed_time.emplace_back(0);
         }
         pthread_barrier_wait(&globals.pthread_utils.p2_barrier);
         // Phase 3
         timer.start();
         phase_3(payload->index, payload->data, pivots, globals.all_partitions);
         timer.stop();
-        pthread_mutex_lock(&globals.pthread_utils.mutex);
-        globals.log_file << utils::format("3.%lld: %ld\n", payload->index, timer.duration().count());
+        payload->elapsed_time.emplace_back(timer.duration().count());
 #ifdef DEBUG
         std::cout << "Thread " << payload->index << " finished Phase 3" << std::endl;
 #endif
-        pthread_mutex_unlock(&globals.pthread_utils.mutex);
         pthread_barrier_wait(&globals.pthread_utils.p3_barrier);
         // Phase 4
         timer.start();
         payload->result = phase_4(payload->index, globals.all_partitions);
         timer.stop();
-        pthread_mutex_lock(&globals.pthread_utils.mutex);
-        globals.log_file << utils::format("4.%lld: %ld\n", payload->index, timer.duration().count());
+        payload->elapsed_time.emplace_back(timer.duration().count());
 #ifdef DEBUG
         std::cout << "Thread " << payload->index << " finished Phase 4" << std::endl;
 #endif
-        pthread_mutex_unlock(&globals.pthread_utils.mutex);
         pthread_barrier_wait(&globals.pthread_utils.p4_barrier);
         return nullptr;
     }
 
-    std::vector<int> psrs(const std::vector<int>& data, size_t num_threads) {
-        auto timer = utils::Timer<std::chrono::microseconds>();
-        auto log_file = std::ofstream(utils::format("psrs %lld %lld.txt", data.size(), num_threads), std::ios::out);
+    std::vector<int> psrs(const std::vector<int>& data,
+                          size_t num_threads,
+                          optional_elapsed_time_records time_records = {}) {
+        auto timer = utils::Timer();
+        timer.start();
         auto pthread_utils = PthreadUtils(num_threads);
         auto threads = std::vector<pthread_t>(num_threads);
-        auto globals = Globals::get_instance(num_threads, log_file, pthread_utils);
+        auto globals = Globals(num_threads, pthread_utils);
         auto payloads = init(data, num_threads, globals);
 #ifdef DEBUG
         std::cout << "Initialization finished, starting threads..." << std::endl;
 #endif
+        cpu_set_t cpu;
+        size_t num_processors = sysconf(_SC_NPROCESSORS_ONLN);
         threads[0] = pthread_self();
+        CPU_ZERO(&cpu);
+        CPU_SET(0, &cpu);
+        pthread_setaffinity_np(threads[0], sizeof(cpu_set_t), &cpu);
+        timer.stop();
         for (size_t i = 1; i < num_threads; ++i) {
+            CPU_ZERO(&cpu);
+            CPU_SET(i % num_processors, &cpu);
+            pthread_attr_setaffinity_np(&pthread_utils.attr, sizeof(cpu_set_t), &cpu);
             if (pthread_create(&threads[i], &pthread_utils.attr, psrs, (void*)&payloads[i]) != 0) {
                 std::cerr << "Failed to create thread " << i << "." << std::endl;
-                log_file.close();
                 exit(1);
             }
         }
         (void)psrs(&payloads[0]);
-        log_file.close();
         std::vector<int> result;
         result.reserve(data.size());
         result.insert(result.end(), payloads[0].result.begin(), payloads[0].result.end());
@@ -192,6 +195,23 @@ namespace psrs {
 #ifdef DEBUG
             std::cout << "Thread " << i << " exited with " << status << std::endl;
 #endif
+        }
+        if (time_records.has_value()) {
+            auto& records = time_records.value().get();
+            records.emplace_back(timer.duration().count());
+            auto p1_elapsed_time = std::vector<int64_t>(num_threads);
+            int64_t p2_elapsed_time = payloads[0].elapsed_time[1];
+            auto p3_elapsed_time = std::vector<int64_t>(num_threads);
+            auto p4_elapsed_time = std::vector<int64_t>(num_threads);
+            for (size_t i = 0; i < num_threads; ++i) {
+                p1_elapsed_time[i] = payloads[i].elapsed_time[0];
+                p3_elapsed_time[i] = payloads[i].elapsed_time[2];
+                p4_elapsed_time[i] = payloads[i].elapsed_time[3];
+            }
+            records.emplace_back(*std::max_element(p1_elapsed_time.begin(), p1_elapsed_time.end()));
+            records.emplace_back(p2_elapsed_time);
+            records.emplace_back(*std::max_element(p3_elapsed_time.begin(), p3_elapsed_time.end()));
+            records.emplace_back(*std::max_element(p4_elapsed_time.begin(), p4_elapsed_time.end()));
         }
 #ifdef DEBUG
         std::cout << "Thread 0 exited" << std::endl;

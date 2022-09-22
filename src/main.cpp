@@ -14,6 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+#include <numeric>
 #include <random>
 
 #include "psrs.hpp"
@@ -62,10 +63,14 @@ int main(int argc, char* argv[]) {
     timer.stop();
     cout << "Sequential sorting finished in " << timer.duration().count() << " microseconds." << endl;
     cout << "Parallel sorting started." << endl;
-    timer.start();
-    auto result = psrs::psrs(data, num_threads);
-    timer.stop();
-    cout << "Parallel sort finished in " << timer.duration().count() << " microseconds." << endl;
+    auto elapsed_time = std::vector<int64_t>();
+    elapsed_time.reserve(5);
+    auto opt = optional<reference_wrapper<vector<int64_t>>>(elapsed_time);
+    auto result = psrs::psrs(data, num_threads, opt);
+    cout << "Parallel sorting finished in " << std::accumulate(elapsed_time.begin(), elapsed_time.end(), 0L)
+         << " microseconds." << endl;
+    cout << "Elapsed time in each phase: ";
+    utils::print_vector(elapsed_time);
     cout << "Checking result..." << endl;
     cout << (clone == result ? "Correct" : "Incorrect") << endl;
     return 0;

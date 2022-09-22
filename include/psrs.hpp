@@ -18,17 +18,18 @@
 
 #include <pthread.h>
 #include <fstream>
+#include <optional>
 
 #include "utils.hpp"
 
 namespace psrs {
 
     using partitions_t = typename std::vector<std::vector<std::vector<int>>>;
+    using optional_elapsed_time_records = typename std::optional<std::reference_wrapper<std::vector<int64_t>>>;
 
     class alignas(64) PthreadUtils {
     public:
         pthread_attr_t attr{};
-        pthread_mutex_t mutex{};
         pthread_barrier_t p0_barrier{};
         pthread_barrier_t p1_barrier{};
         pthread_barrier_t p2_barrier{};
@@ -36,7 +37,7 @@ namespace psrs {
         pthread_barrier_t p4_barrier{};
         explicit PthreadUtils(size_t num_threads) {
             pthread_attr_init(&attr);
-            pthread_mutex_init(&mutex, nullptr);
+            pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
             pthread_barrier_init(&p0_barrier, nullptr, num_threads);
             pthread_barrier_init(&p1_barrier, nullptr, num_threads);
             pthread_barrier_init(&p2_barrier, nullptr, num_threads);
@@ -45,7 +46,6 @@ namespace psrs {
         }
         ~PthreadUtils() {
             pthread_attr_destroy(&attr);
-            pthread_mutex_destroy(&mutex);
             pthread_barrier_destroy(&p0_barrier);
             pthread_barrier_destroy(&p1_barrier);
             pthread_barrier_destroy(&p2_barrier);
@@ -55,9 +55,12 @@ namespace psrs {
     };
 
     class alignas(64) Globals {
-    private:
-        Globals(size_t num_threads, std::ofstream& log_file, PthreadUtils& pthread_utils)
-            : log_file(log_file), pthread_utils(pthread_utils) {
+    public:
+        PthreadUtils& pthread_utils;
+        std::vector<int> pivots;
+        std::vector<std::vector<int>> all_samples;
+        partitions_t all_partitions;
+        Globals(size_t num_threads, PthreadUtils& pthread_utils) : pthread_utils(pthread_utils) {
             pivots = std::vector<int>(num_threads - 1);
             all_samples = std::vector<std::vector<int>>(num_threads);
             all_partitions = partitions_t(num_threads);
@@ -67,17 +70,6 @@ namespace psrs {
                     partitions.emplace_back(std::vector<int>());
                 }
             }
-        }
-
-    public:
-        std::ofstream& log_file;
-        PthreadUtils& pthread_utils;
-        std::vector<int> pivots;
-        std::vector<std::vector<int>> all_samples;
-        partitions_t all_partitions;
-        static Globals& get_instance(size_t num_threads, std::ofstream& log_file, PthreadUtils& pthread_utils) {
-            static Globals instance(num_threads, log_file, pthread_utils);
-            return instance;
         }
     };
 
@@ -89,6 +81,7 @@ namespace psrs {
         std::vector<int> data;
         size_t stride_size;
         std::vector<int> result{};
+        std::vector<int64_t> elapsed_time{};
         Payload(size_t index,
                 Globals& globals,
                 const std::vector<int>& data,
@@ -99,8 +92,9 @@ namespace psrs {
             auto first = data.begin() + (long)begin;
             auto last = data.begin() + (long)end;
             this->data = std::vector<int>(first, last);
+            this->elapsed_time.reserve(4);
         }
     };
 
-    std::vector<int> psrs(const std::vector<int>&, size_t);
+    std::vector<int> psrs(const std::vector<int>&, size_t, optional_elapsed_time_records);
 }  // namespace psrs
