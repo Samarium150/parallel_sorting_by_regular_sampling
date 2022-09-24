@@ -172,6 +172,7 @@ namespace psrs {
         CPU_SET(0, &cpu);
         pthread_setaffinity_np(threads[0], sizeof(cpu_set_t), &cpu);
         timer.stop();
+        auto preparation_time = timer.duration().count();
         for (size_t i = 1; i < num_threads; ++i) {
             CPU_ZERO(&cpu);
             CPU_SET(i % num_processors, &cpu);
@@ -182,6 +183,7 @@ namespace psrs {
             }
         }
         (void)psrs(&payloads[0]);
+        timer.start();
         std::vector<int> result;
         result.reserve(data.size());
         result.insert(result.end(), payloads[0].result.begin(), payloads[0].result.end());
@@ -196,9 +198,11 @@ namespace psrs {
             std::cout << "Thread " << i << " exited with " << status << std::endl;
 #endif
         }
+        timer.stop();
+        auto collection_time = timer.duration().count();
         if (time_records.has_value()) {
             auto& records = time_records.value().get();
-            records.emplace_back(timer.duration().count());
+            records.emplace_back(preparation_time);
             auto p1_elapsed_time = std::vector<int64_t>(num_threads);
             int64_t p2_elapsed_time = payloads[0].elapsed_time[1];
             auto p3_elapsed_time = std::vector<int64_t>(num_threads);
@@ -212,6 +216,7 @@ namespace psrs {
             records.emplace_back(p2_elapsed_time);
             records.emplace_back(*std::max_element(p3_elapsed_time.begin(), p3_elapsed_time.end()));
             records.emplace_back(*std::max_element(p4_elapsed_time.begin(), p4_elapsed_time.end()));
+            records.emplace_back(collection_time);
         }
 #ifdef DEBUG
         std::cout << "Thread 0 exited" << std::endl;

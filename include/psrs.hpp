@@ -17,7 +17,6 @@
 #pragma once
 
 #include <pthread.h>
-#include <fstream>
 #include <optional>
 
 #include "utils.hpp"
