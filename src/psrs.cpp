@@ -14,12 +14,84 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 
 #include "psrs.hpp"
 
 namespace psrs {
+
+    using partitions_t = typename std::vector<std::vector<std::vector<int>>>;
+
+    class alignas(64) PthreadUtils {
+    public:
+        pthread_attr_t attr{};
+        pthread_barrier_t p0_barrier{};
+        pthread_barrier_t p1_barrier{};
+        pthread_barrier_t p2_barrier{};
+        pthread_barrier_t p3_barrier{};
+        pthread_barrier_t p4_barrier{};
+        explicit PthreadUtils(size_t num_threads) {
+            pthread_attr_init(&attr);
+            pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+            pthread_barrier_init(&p0_barrier, nullptr, num_threads);
+            pthread_barrier_init(&p1_barrier, nullptr, num_threads);
+            pthread_barrier_init(&p2_barrier, nullptr, num_threads);
+            pthread_barrier_init(&p3_barrier, nullptr, num_threads);
+            pthread_barrier_init(&p4_barrier, nullptr, num_threads);
+        }
+        ~PthreadUtils() {
+            pthread_attr_destroy(&attr);
+            pthread_barrier_destroy(&p0_barrier);
+            pthread_barrier_destroy(&p1_barrier);
+            pthread_barrier_destroy(&p2_barrier);
+            pthread_barrier_destroy(&p3_barrier);
+            pthread_barrier_destroy(&p4_barrier);
+        }
+    };
+
+    class alignas(64) Globals {
+    public:
+        PthreadUtils& pthread_utils;
+        std::vector<int> pivots;
+        std::vector<std::vector<int>> all_samples;
+        partitions_t all_partitions;
+        Globals(size_t num_threads, PthreadUtils& pthread_utils) : pthread_utils(pthread_utils) {
+            pivots = std::vector<int>(num_threads - 1);
+            all_samples = std::vector<std::vector<int>>(num_threads);
+            all_partitions = partitions_t(num_threads);
+            for (auto& partitions : all_partitions) {
+                partitions.reserve(num_threads);
+                for (size_t _ = 0; _ < num_threads; ++_) {
+                    partitions.emplace_back(std::vector<int>());
+                }
+            }
+        }
+    };
+
+    class alignas(64) Payload {
+    public:
+        size_t index;
+        utils::Timer<std::chrono::microseconds> timer{};
+        Globals& globals;
+        std::vector<int> data;
+        size_t stride_size;
+        std::vector<int> result{};
+        std::vector<int64_t> elapsed_time{};
+        Payload(size_t index,
+                Globals& globals,
+                const std::vector<int>& data,
+                size_t begin,
+                size_t end,
+                size_t stride_size)
+            : index(index), globals(globals), stride_size(stride_size) {
+            auto first = data.begin() + (long)begin;
+            auto last = data.begin() + (long)end;
+            this->data = std::vector<int>(first, last);
+            this->elapsed_time.reserve(4);
+        }
+    };
 
     static std::vector<int> merge_sorted_vectors(const std::vector<std::vector<int>>& vectors) {
         size_t size = vectors.size();
@@ -77,34 +149,24 @@ namespace psrs {
         }
     }
 
-    static void phase_3(size_t index,
+    static void phase_3(size_t id,
                         const std::vector<int>& data,
                         const std::vector<int>& pivots,
                         partitions_t& all_partitions) {
-        auto partitions = std::vector<std::vector<int>>(pivots.size() + 1);
-        int prev = INT32_MIN;
+        int64_t index = 0;
         for (size_t i = 0; i < pivots.size(); ++i) {
-            const auto& pivot = pivots[i];
-            auto& partition = partitions[i];
-            for (const int& value : data) {
-                if (value > prev && value <= pivot) {
-                    partition.emplace_back(value);
-                } else if (value > pivot && i == pivots.size() - 1) {
-                    partitions[i + 1].emplace_back(value);
-                }
-            }
-            prev = pivot;
+            auto it = std::lower_bound(data.begin() + index, data.end(), pivots[i]);
+            all_partitions[i][id] = std::vector(data.begin() + index, it);
+            index = it - data.begin();
         }
-        for (size_t i = 0; i < partitions.size(); ++i) {
-            all_partitions[i][index] = partitions[i];
-        }
+        all_partitions[pivots.size()][id] = std::vector(data.begin() + index, data.end());
     }
 
-    static std::vector<int> phase_4(size_t index, partitions_t& all_partitions) {
-        return merge_sorted_vectors(all_partitions[index]);
+    static std::vector<int> phase_4(size_t id, partitions_t& all_partitions) {
+        return merge_sorted_vectors(all_partitions[id]);
     }
 
-    void* psrs(void* arg) {
+    static void* psrs(void* arg) {
         auto payload = (Payload*)arg;
         auto& timer = payload->timer;
         auto& globals = payload->globals;

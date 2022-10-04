@@ -24,13 +24,6 @@
 
 namespace utils {
 
-    // https://stackoverflow.com/a/10758845
-    template <typename T>
-    void print_vector(const std::vector<T>& vec) {
-        std::ranges::copy(vec, std::ostream_iterator<T>(std::cout, " "));
-        std::cout << std::endl;
-    }
-
     // https://stackoverflow.com/a/21995693
     template <class DurationT = std::chrono::milliseconds, class ClockT = std::chrono::steady_clock>
     class Timer {
@@ -54,6 +47,13 @@ namespace utils {
             return std::chrono::duration_cast<T>(_end - _start);
         }
     };
+
+    // https://stackoverflow.com/a/10758845
+    template <typename T>
+    [[maybe_unused]] void print_vector(const std::vector<T>& vec) {
+        std::ranges::copy(vec, std::ostream_iterator<T>(std::cout, " "));
+        std::cout << std::endl;
+    }
 
     // https://stackoverflow.com/a/26221725
     template <typename... Args>
