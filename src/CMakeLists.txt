@@ -1,0 +1,7 @@
+set(INCLUDE ${CMAKE_SOURCE_DIR}/include)
+include_directories(${INCLUDE})
+file(GLOB src "*.cpp")
+LIST(REMOVE_ITEM src ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
+add_library(psrs STATIC ${src})
+add_executable(main main.cpp)
+target_link_libraries(main PUBLIC psrs)
