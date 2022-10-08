@@ -41,13 +41,24 @@ def main():
             with open(os.path.join('logs', log), 'r') as f:
                 parallel_time_records[size][num_thread].append(int(f.readlines()[-1]))
     sequential_time_records.sort()
-    temp: List[List[int]] = []
+    temp: List[List[float]] = []
     for i in range(len(sizes)):
         t = [sequential_time_records[i]]
         for v in parallel_time_records[sizes[i]].values():
             t.extend(v)
         temp.append(t)
     print(temp)
+    for i in range(len(sizes)):
+        t = temp[i]
+        last = 0
+        for j in range(len(t) - 1):
+            sp = round(t[0] / t[j + 1], 3)
+            print(f"Speedup of size {sizes[i]} with {num_threads[j]} threads: {sp}, increased: {sp - last}")
+            last = sp
+    for i in range(len(sizes)):
+        for j in range(len(temp[i])):
+            temp[i][j] = round(temp[i][j] / 1000000, 3)
+
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.axis([0, 22, 0, 11])
     ax.plot(np.arange(0, 22, 2), np.arange(0, 11, 1) * 2, ls="--", c=".3", label="Linear")

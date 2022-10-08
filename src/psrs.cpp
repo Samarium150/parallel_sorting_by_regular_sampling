@@ -96,7 +96,7 @@ namespace psrs {
     static std::vector<int> merge_sorted_vectors(const std::vector<std::vector<int>>& vectors) {
         size_t size = vectors.size();
         size_t total_size = 0;
-        for (size_t i = 0; i < size; i++) {
+        for (size_t i = 0; i < size; ++i) {
             total_size += vectors[i].size();
         }
         auto result = std::vector<int>(total_size);
@@ -105,7 +105,7 @@ namespace psrs {
         while (pos < total_size) {
             int min = INT32_MAX;
             size_t min_index = -1;
-            for (size_t i = 0; i < size; i++) {
+            for (size_t i = 0; i < size; ++i) {
                 if (indices[i] < vectors[i].size() && vectors[i][indices[i]] < min) {
                     min = vectors[i][indices[i]];
                     min_index = i;
@@ -176,7 +176,7 @@ namespace psrs {
         globals.all_samples[payload->index] = phase_1(payload->data, payload->stride_size);
         timer.stop();
         payload->elapsed_time.emplace_back(timer.duration().count());
-#ifdef DEBUG
+#ifdef _DEBUG
         std::cout << "Thread " << payload->index << " finished Phase 1" << std::endl;
 #endif
         pthread_barrier_wait(&globals.pthread_utils.p1_barrier);
@@ -187,7 +187,7 @@ namespace psrs {
             phase_2(globals.all_samples, pivots);
             timer.stop();
             payload->elapsed_time.emplace_back(timer.duration().count());
-#ifdef DEBUG
+#ifdef _DEBUG
             std::cout << "Thread 0 finished Phase 2" << std::endl;
 #endif
         } else {
@@ -199,7 +199,7 @@ namespace psrs {
         phase_3(payload->index, payload->data, pivots, globals.all_partitions);
         timer.stop();
         payload->elapsed_time.emplace_back(timer.duration().count());
-#ifdef DEBUG
+#ifdef _DEBUG
         std::cout << "Thread " << payload->index << " finished Phase 3" << std::endl;
 #endif
         pthread_barrier_wait(&globals.pthread_utils.p3_barrier);
@@ -208,7 +208,7 @@ namespace psrs {
         payload->result = phase_4(payload->index, globals.all_partitions);
         timer.stop();
         payload->elapsed_time.emplace_back(timer.duration().count());
-#ifdef DEBUG
+#ifdef _DEBUG
         std::cout << "Thread " << payload->index << " finished Phase 4" << std::endl;
 #endif
         pthread_barrier_wait(&globals.pthread_utils.p4_barrier);
@@ -218,27 +218,19 @@ namespace psrs {
     std::vector<int> psrs(const std::vector<int>& data,
                           size_t num_threads,
                           optional_elapsed_time_records time_records = {}) {
-        auto timer = utils::Timer();
+        auto timer = utils::Timer<std::chrono::microseconds>();
         timer.start();
         auto pthread_utils = PthreadUtils(num_threads);
         auto threads = std::vector<pthread_t>(num_threads);
         auto globals = Globals(num_threads, pthread_utils);
         auto payloads = init(data, num_threads, globals);
-#ifdef DEBUG
+#ifdef _DEBUG
         std::cout << "Initialization finished, starting threads..." << std::endl;
 #endif
-        cpu_set_t cpu;
-        size_t num_processors = sysconf(_SC_NPROCESSORS_ONLN);
         threads[0] = pthread_self();
-        CPU_ZERO(&cpu);
-        CPU_SET(0, &cpu);
-        pthread_setaffinity_np(threads[0], sizeof(cpu_set_t), &cpu);
         timer.stop();
         auto preparation_time = timer.duration().count();
         for (size_t i = 1; i < num_threads; ++i) {
-            CPU_ZERO(&cpu);
-            CPU_SET(i % num_processors, &cpu);
-            pthread_attr_setaffinity_np(&pthread_utils.attr, sizeof(cpu_set_t), &cpu);
             if (pthread_create(&threads[i], &pthread_utils.attr, psrs, (void*)&payloads[i]) != 0) {
                 std::cerr << "Failed to create thread " << i << "." << std::endl;
                 exit(1);
@@ -256,7 +248,7 @@ namespace psrs {
                 std::cerr << "Failed to join thread " << i << "." << std::endl;
                 exit(1);
             }
-#ifdef DEBUG
+#ifdef _DEBUG
             std::cout << "Thread " << i << " exited with " << status << std::endl;
 #endif
         }
@@ -280,7 +272,7 @@ namespace psrs {
             records.emplace_back(*std::max_element(p4_elapsed_time.begin(), p4_elapsed_time.end()));
             records.emplace_back(collection_time);
         }
-#ifdef DEBUG
+#ifdef _DEBUG
         std::cout << "Thread 0 exited" << std::endl;
 #endif
         return result;
